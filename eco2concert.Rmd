@@ -48,58 +48,237 @@ unless you are submitting to a camera-ready copy (CRC) journal.
 
 For detailed instructions regarding the elsevier article class, see   <https://www.elsevier.com/authors/policies-and-guidelines/latex-instructions>
 
-# Bibliography styles
+# Mixed-integer linear model for festival energy system design
 
-Here are two sample references: [@Nair1993_IntroAgroforestry; @Toensmeier2017_Carbon_Agroforestry].
+In this section, we formulate the mixed-integer linear programming (MILP) model that configures the **festival** energy system for a given site and planning horizon.
+The model selects and sizes on-site technologies and their operation in order to cover the time-varying electricity demand while respecting technical constraints and minimizing total cost and greenhouse-gas emissions.
 
-By default, natbib will be used with the `authoryear` style, set in `classoption` variable in YAML and with `elsearticle-harv.bst` which is among provided style by `elsarticle` documentclass. Other available style are `elsarticle-num.bst` and `elsarticle-num-names.bst` — the first one can be used for the numbered scheme, second one for numbered with new options of natbib.sty. 
+Conceptually, the model decides which supply and storage technologies to install (e.g. diesel generators, battery storage, photovoltaic panels) and how to operate them in each time step during the festival.
+It balances demand and supply in every period, enforces capacity limits, and represents storage dynamics as a linear state-of-charge evolution over time.
 
-You can sets extra options with `natbiboptions` variable in YAML header. Example 
-```yaml
-natbiboptions: longnamesfirst,angle,semicolon
-```
+### Sets and indices
 
-There are various more specific bibliography styles available at
-<https://support.stmdocs.in/wiki/index.php?title=Model-wise_bibliographic_style_files>. 
-To use one of these, add it in the header using, for example, `biblio-style: model1-num-names`.
+- $T$: set of time periods, indexed by $t$.
+- $G$: set of dispatchable generators (e.g. diesel or HVO gensets), indexed by $g$.
+- $P$: set of non-dispatchable generation technologies (e.g. PV), indexed by $p$.
+- $S$: set of electrical storage technologies (e.g. batteries), indexed by $s$.
 
-## Using CSL 
+### Decision variables
 
-If `citation_package` is set to `default` in `elsevier_article()`, then pandoc is used for citations instead of `natbib`. In this case, the `csl` option is used to format the references. Alternative `csl` files are available from <https://www.zotero.org/styles?q=elsevier>. These can be downloaded
-and stored locally, or the url can be used as in the example header.
+Investment (design) variables:
 
-# Equations
+- $y_g \in \{0,1\}$: installation decision for generator $g$.
+- $K^{gen}_g \ge 0$: installed power capacity of generator $g$ [kW].
+- $K^{pv}_p \ge 0$: installed power capacity of non-dispatchable technology $p$ [kW].
+- $K^{ch}_s, K^{dis}_s \ge 0$: charge and discharge power capacity of storage $s$ [kW].
+- $E^{max}_s \ge 0$: energy capacity of storage $s$ [kWh].
 
-Here is an equation:
-$$ 
-  f_{X}(x) = \left(\frac{\alpha}{\beta}\right)
-  \left(\frac{x}{\beta}\right)^{\alpha-1}
-  e^{-\left(\frac{x}{\beta}\right)^{\alpha}}; 
-  \alpha,\beta,x > 0 .
+Operational variables:
+
+- $P^{gen}_{g,t} \ge 0$: power output of generator $g$ in period $t$ [kW].
+- $P^{pv}_{p,t} \ge 0$: power output of non-dispatchable technology $p$ in period $t$ [kW].
+- $P^{ch}_{s,t} \ge 0$: charging power of storage $s$ in period $t$ [kW].
+- $P^{dis}_{s,t} \ge 0$: discharging power of storage $s$ in period $t$ [kW].
+- $E_{s,t} \ge 0$: state of charge of storage $s$ at end of period $t$ [kWh].
+- $P^{grid}_{t} \ge 0$: imported power from the public grid in period $t$, if allowed [kW].
+
+### Parameters
+
+- $D_t$: electricity demand in period $t$ [kW].
+- $\Delta t$: length of a time step [h].
+- $c^{inv,gen}_g$: specific investment cost for generator $g$ [EUR/kW].
+- $c^{inv,pv}_p$: specific investment cost for PV or other non-dispatchable technology $p$ [EUR/kW].
+- $c^{inv,ch}_s, c^{inv,dis}_s$: investment cost for charge and discharge power of storage $s$ [EUR/kW].
+- $c^{inv,E}_s$: investment cost for storage energy capacity $E^{max}_s$ [EUR/kWh].
+- $c^{fuel}_g$: variable fuel cost of generator $g$ [EUR/kWh].
+- $c^{grid}_t$: electricity purchase price from the grid in period $t$ [EUR/kWh].
+- $e^{fuel}_g$: emission factor of generator $g$ [kg CO2e/kWh].
+- $e^{grid}_t$: emission factor of grid electricity in period $t$ [kg CO2e/kWh].
+- $\eta^{ch}_s$, $\eta^{dis}_s$: charging and discharging efficiency of storage $s$.
+- $P^{pv,avail}_{p,t}$: specific PV availability profile (capacity factor) for technology $p$ in period $t$ [–], so that $P^{pv}_{p,t} \le P^{pv,avail}_{p,t} \cdot K^{pv}_p$.
+- $E^{min}_s$: minimum state of charge of storage $s$ [kWh].
+- $E^{budget}$: upper bound on total emissions [kg CO2e].
+
+### Objective function
+
+We minimize the sum of investment cost, operational cost, and optionally a penalty on greenhouse-gas emissions:
+
+$$
+egin{aligned}
+\min  Z 
+= & \sum_{g \in G} c^{inv,gen}_g K^{gen}_g
++ \sum_{p \in P} c^{inv,pv}_p K^{pv}_p\
+& + \sum_{s \in S} \left(
+ c^{inv,ch}_s K^{ch}_s
++ c^{inv,dis}_s K^{dis}_s
++ c^{inv,E}_s E^{max}_s
+
+ight)\
+& + \sum_{t \in T} \left[
+\sum_{g \in G} c^{fuel}_g \, P^{gen}_{g,t} \, \Delta t
++ c^{grid}_t \, P^{grid}_{t} \, \Delta t
+
+ight].
+\end{aligned}
 $$
 
-Here is another:
-\begin{align}
-  a^2+b^2=c^2.
-\end{align}
+If emissions are treated with an explicit price or weighting factor, an additional term can be added to the objective.
 
-Inline equations: $\sum_{i = 2}^\infty\{\alpha_i^\beta\}$
+### Constraints
 
-# Figures and tables
+#### Power balance
 
-Figure \ref{fig2} is generated using an R chunk.
+For every period, total generation, net storage discharge, and grid imports must cover the demand:
 
-```{r fig2, fig.width = 5, fig.height = 5, fig.align='center', out.width="50%", fig.cap = "\\label{fig2}A meaningless scatterplot.", echo = FALSE}
-plot(runif(25), runif(25))
-```
+$$
+\sum_{g \in G} P^{gen}_{g,t}
++ \sum_{p \in P} P^{pv}_{p,t}
++ \sum_{s \in S} \left( P^{dis}_{s,t} - P^{ch}_{s,t} 
+ight)
++ P^{grid}_{t}
+= D_t
+\quad \forall t \in T.
+$$
 
-# Tables coming from R
+#### Generator capacity
 
-Tables can also be generated using R chunks, as shown in Table \ref{tab1} for example.
+Dispatchable generators are limited by their installed power capacities:
 
-```{r tab1, echo = TRUE}
-knitr::kable(head(mtcars)[,1:4], 
-    caption = "\\label{tab1}Caption centered above table"
+$$
+P^{gen}_{g,t} \le K^{gen}_g
+\quad \forall g \in G, \, t \in T.
+$$
+
+If a binary build decision is used:
+
+$$
+K^{gen}_g \le \overline{P}^{gen}_g \, y_g
+\quad \forall g \in G.
+$$
+
+#### Non-dispatchable generation (PV)
+
+PV or other non-dispatchable technologies are constrained by availability profiles:
+
+$$
+0 \le P^{pv}_{p,t} \le P^{pv,avail}_{p,t} \cdot K^{pv}_p
+\quad \forall p \in P, \, t \in T.
+$$
+
+#### Storage power and energy capacity
+
+Power rating limits for storage:
+
+$$
+0 \le P^{ch}_{s,t} \le K^{ch}_s
+\quad \forall s \in S, \, t \in T,
+$$
+$$
+0 \le P^{dis}_{s,t} \le K^{dis}_s
+\quad \forall s \in S, \, t \in T.
+$$
+
+State-of-charge dynamics:
+
+$$
+E_{s,t} = E_{s,t-1}
++ \eta^{ch}_s \, P^{ch}_{s,t} \, \Delta t
+- rac{1}{\eta^{dis}_s} \, P^{dis}_{s,t} \, \Delta t
+\quad \forall s \in S, \, t \in T.
+$$
+
+Energy capacity bounds and cyclic condition:
+
+$$
+E^{min}_s \le E_{s,t} \le E^{max}_s
+\quad \forall s \in S, \, t \in T,
+$$
+$$
+E_{s,T_{end}} = E_{s,T_{start}}
+\quad \forall s \in S.
+$$
+
+#### Emission budget (optional)
+
+If the festival operator specifies a maximum emission budget, the model can include:
+
+$$
+\sum_{t \in T} \left(
+\sum_{g \in G} e^{fuel}_g \, P^{gen}_{g,t} \, \Delta t
++ e^{grid}_t \, P^{grid}_{t} \, \Delta t
+
+ight) \le E^{budget}.
+$$
+
+### Notation summary
+
+```{r milp-notation-table, echo=FALSE, results='asis'}
+knitr::kable(
+  data.frame(
+    Symbol = c(
+      "$t$", "$g$", "$p$", "$s$",
+      "$T$", "$G$", "$P$", "$S$",
+      "$D_t$", "$\Delta t$",
+      "$y_g$", "$K^{gen}_g$", "$K^{pv}_p$",
+      "$K^{ch}_s$", "$K^{dis}_s$", "$E^{max}_s$",
+      "$P^{gen}_{g,t}$", "$P^{pv}_{p,t}$",
+      "$P^{ch}_{s,t}$", "$P^{dis}_{s,t}$", "$E_{s,t}$",
+      "$P^{grid}_t$",
+      "$c^{inv,gen}_g$", "$c^{inv,pv}_p$",
+      "$c^{inv,ch}_s$", "$c^{inv,dis}_s$", "$c^{inv,E}_s$",
+      "$c^{fuel}_g$", "$c^{grid}_t$",
+      "$e^{fuel}_g$", "$e^{grid}_t$",
+      "$\eta^{ch}_s$", "$\eta^{dis}_s$",
+      "$P^{pv,avail}_{p,t}$",
+      "$E^{min}_s$", "$E^{budget}$"
+    ),
+    Description = c(
+      "Time period index",
+      "Dispatchable generator index",
+      "Non-dispatchable generation technology index",
+      "Storage technology index",
+      "Set of time periods",
+      "Set of dispatchable generators",
+      "Set of non-dispatchable generation technologies",
+      "Set of storage technologies",
+      "Electricity demand in period $t$ [kW]",
+      "Length of time step [h]",
+      "Binary installation decision for generator $g$",
+      "Installed capacity of generator $g$ [kW]",
+      "Installed capacity of technology $p$ [kW]",
+      "Charge power capacity of storage $s$ [kW]",
+      "Discharge power capacity of storage $s$ [kW]",
+      "Energy capacity of storage $s$ [kWh]",
+      "Power output of generator $g$ in $t$ [kW]",
+      "Power output of technology $p$ in $t$ [kW]",
+      "Charging power of storage $s$ in $t$ [kW]",
+      "Discharging power of storage $s$ in $t$ [kW]",
+      "State of charge of storage $s$ at end of $t$ [kWh]",
+      "Imported grid power in $t$ [kW]",
+      "Specific investment cost of generator $g$ [EUR/kW]",
+      "Specific investment cost of technology $p$ [EUR/kW]",
+      "Investment cost of storage charge capacity [EUR/kW]",
+      "Investment cost of storage discharge capacity [EUR/kW]",
+      "Investment cost of storage energy capacity [EUR/kWh]",
+      "Fuel cost of generator $g$ [EUR/kWh]",
+      "Electricity purchase price in $t$ [EUR/kWh]",
+      "Emission factor of generator $g$ [kg CO2e/kWh]",
+      "Emission factor of grid electricity in $t$ [kg CO2e/kWh]",
+      "Charging efficiency of storage $s$",
+      "Discharging efficiency of storage $s$",
+      "Availability factor of technology $p$ in $t$",
+      "Minimum allowed state of charge of storage $s$ [kWh]",
+      "Total emission budget [kg CO2e]"
+    ),
+    Type = c(
+      rep("Index", 4),
+      rep("Set", 4),
+      rep("Parameter", 6),
+      rep("Decision variable", 11),
+      rep("Parameter", 11)
+    )
+  ),
+  caption = "Notation used in the MILP formulation for festival energy system design."
 )
 ```
 
